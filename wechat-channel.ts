@@ -265,11 +265,16 @@ interface RefMessage {
   title?: string;
 }
 
-interface ImageItem {
-  url?: string;
-  media_id?: string;
+interface CDNMedia {
+  encrypt_query_param?: string;
   aes_key?: string;
-  file_size?: number;
+}
+
+interface ImageItem {
+  media?: CDNMedia;
+  thumb_media?: CDNMedia;
+  aeskey?: string;  // hex-encoded AES key (preferred over media.aes_key)
+  url?: string;
 }
 
 interface MessageItem {
@@ -309,6 +314,75 @@ const MSG_ITEM_VOICE = 3;
 const MSG_TYPE_BOT = 2;
 const MSG_STATE_FINISH = 2;
 
+// ── CDN Media Download + AES Decrypt ─────────────────────────────────────────
+
+const CDN_BASE_URL = "https://novac2c.cdn.weixin.qq.com/c2c";
+const MEDIA_DIR = path.join(CREDENTIALS_DIR, "media");
+
+function decryptAesEcb(ciphertext: Buffer, key: Buffer): Buffer {
+  const decipher = crypto.createDecipheriv("aes-128-ecb", key, null);
+  return Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+}
+
+function parseAesKey(aesKeyBase64: string): Buffer {
+  const decoded = Buffer.from(aesKeyBase64, "base64");
+  if (decoded.length === 16) return decoded;
+  if (decoded.length === 32 && /^[0-9a-fA-F]{32}$/.test(decoded.toString("ascii"))) {
+    return Buffer.from(decoded.toString("ascii"), "hex");
+  }
+  throw new Error(`Invalid AES key length: ${decoded.length}`);
+}
+
+async function downloadAndDecryptImage(imageItem: ImageItem): Promise<string | null> {
+  const encryptQueryParam = imageItem.media?.encrypt_query_param;
+  if (!encryptQueryParam) {
+    log("image: no encrypt_query_param");
+    return null;
+  }
+
+  // Get AES key: prefer image_item.aeskey (hex) over media.aes_key (base64)
+  let aesKeyBase64: string | undefined;
+  if (imageItem.aeskey) {
+    aesKeyBase64 = Buffer.from(imageItem.aeskey, "hex").toString("base64");
+  } else if (imageItem.media?.aes_key) {
+    aesKeyBase64 = imageItem.media.aes_key;
+  }
+
+  const cdnUrl = `${CDN_BASE_URL}/download?encrypted_query_param=${encodeURIComponent(encryptQueryParam)}`;
+  log(`image: downloading from CDN...`);
+
+  try {
+    const res = await fetch(cdnUrl);
+    if (!res.ok) {
+      logError(`image CDN download failed: ${res.status}`);
+      return null;
+    }
+    const encrypted = Buffer.from(await res.arrayBuffer());
+    log(`image: downloaded ${encrypted.length} bytes`);
+
+    let imageBuffer: Buffer;
+    if (aesKeyBase64) {
+      const key = parseAesKey(aesKeyBase64);
+      imageBuffer = decryptAesEcb(encrypted, key);
+      log(`image: decrypted ${imageBuffer.length} bytes`);
+    } else {
+      imageBuffer = encrypted;
+      log(`image: no AES key, using raw bytes`);
+    }
+
+    // Save to local file
+    fs.mkdirSync(MEDIA_DIR, { recursive: true });
+    const filename = `img_${Date.now()}_${crypto.randomBytes(4).toString("hex")}.jpg`;
+    const filepath = path.join(MEDIA_DIR, filename);
+    fs.writeFileSync(filepath, imageBuffer);
+    log(`image: saved to ${filepath}`);
+    return filepath;
+  } catch (err) {
+    logError(`image download/decrypt failed: ${String(err)}`);
+    return null;
+  }
+}
+
 function extractContentFromMessage(msg: WeixinMessage): { text: string; imageUrls: string[] } {
   const imageUrls: string[] = [];
   let text = "";
@@ -328,8 +402,10 @@ function extractContentFromMessage(msg: WeixinMessage): { text: string; imageUrl
       }
     }
     if (item.type === MSG_ITEM_IMAGE && item.image_item) {
-      const url = item.image_item.url;
-      if (url) imageUrls.push(url);
+      // Mark that we have an image; actual download happens async in polling loop
+      const encParam = item.image_item.media?.encrypt_query_param;
+      if (encParam) imageUrls.push(`__pending_download__`);
+      else if (item.image_item.url) imageUrls.push(item.image_item.url);
     }
     if (item.type === MSG_ITEM_VOICE && item.voice_item?.text) {
       text = item.voice_item.text;
@@ -663,9 +739,6 @@ async function startPolling(account: AccountData): Promise<never> {
         // Only process user messages (not bot messages)
         if (msg.message_type !== MSG_TYPE_USER) continue;
 
-        const text = extractTextFromMessage(msg);
-        if (!text) continue;
-
         const senderId = msg.from_user_id ?? "unknown";
 
         // Cache context token for reply
@@ -673,13 +746,36 @@ async function startPolling(account: AccountData): Promise<never> {
           cacheContextToken(senderId, msg.context_token);
         }
 
-        log(`收到消息: from=${senderId} text=${text.slice(0, 50)}...`);
+        // Download images if present
+        const imagePaths: string[] = [];
+        for (const item of msg.item_list ?? []) {
+          if (item.type === MSG_ITEM_IMAGE && item.image_item) {
+            const localPath = await downloadAndDecryptImage(item.image_item);
+            if (localPath) imagePaths.push(localPath);
+          }
+        }
+
+        // Build message content
+        let content = "";
+        const { text } = extractContentFromMessage(msg);
+
+        if (imagePaths.length > 0 && text) {
+          content = `${text}\n${imagePaths.map(p => `[用户发送了图片，已保存到: ${p}]`).join("\n")}`;
+        } else if (imagePaths.length > 0) {
+          content = imagePaths.map(p => `[用户发送了图片，已保存到: ${p}]`).join("\n");
+        } else if (text) {
+          content = text;
+        } else {
+          continue;
+        }
+
+        log(`收到消息: from=${senderId} text=${content.slice(0, 80)}...`);
 
         // Push to Claude Code session
         await mcp.notification({
           method: "notifications/claude/channel",
           params: {
-            content: text,
+            content,
             meta: {
               sender: senderId.split("@")[0] || senderId,
               sender_id: senderId,
