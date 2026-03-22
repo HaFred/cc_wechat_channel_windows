@@ -74,21 +74,72 @@ bun install
 ### 2. 微信扫码登录
 
 ```bash
-bun setup.ts
+bun setup.ts              # 默认账号
 ```
 
-终端会显示二维码，用微信扫描并确认。凭据保存到 `~/.claude/channels/wechat/account.json`。
+终端会显示二维码，用微信扫描并确认。凭据保存到 `~/.claude/channels/wechat/accounts/default.json`。
 
 ### 3. 启动 Claude Code + WeChat 通道
 
 ```bash
-cd claude-code-wechat-channel
 claude --dangerously-load-development-channels server:wechat
 ```
 
 ### 4. 在微信中发消息
 
 打开微信，找到 ClawBot 对话，发送消息。消息会出现在 Claude Code 终端中，Claude 的回复会自动发回微信。
+
+## 多微信账号支持
+
+支持同一台机器登录多个微信号，每个账号独立运行：
+
+### 登录多个账号
+
+```bash
+bun setup.ts               # 默认账号（default）
+bun setup.ts work           # 工作号
+bun setup.ts personal       # 个人号
+```
+
+每次扫码登录一个微信号，凭据分别保存到：
+```
+~/.claude/channels/wechat/accounts/default.json
+~/.claude/channels/wechat/accounts/work.json
+~/.claude/channels/wechat/accounts/personal.json
+```
+
+### 查看已登录的账号
+
+```bash
+bun setup.ts --list
+```
+
+### 启动指定账号
+
+```bash
+# 默认账号（不需要环境变量）
+claude --dangerously-load-development-channels server:wechat
+
+# 指定账号
+WECHAT_ACCOUNT=work claude --dangerously-load-development-channels server:wechat
+```
+
+### 多账号同时运行
+
+在不同终端窗口分别启动不同账号，每个账号的消息互不干扰：
+
+```bash
+# 终端 1：默认账号 → vincent 项目
+cd ~/vincent && claude --dangerously-load-development-channels server:wechat
+
+# 终端 2：工作号 → intern-ai 项目
+cd ~/intern-ai && WECHAT_ACCOUNT=work claude --dangerously-load-development-channels server:wechat
+
+# 终端 3：个人号 → ai-insight 项目
+cd ~/ai-insight && WECHAT_ACCOUNT=personal claude --dangerously-load-development-channels server:wechat
+```
+
+每个账号独立维护：凭据、消息同步状态、图片缓存目录。
 
 ## 文件说明
 

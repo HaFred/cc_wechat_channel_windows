@@ -58,12 +58,14 @@ const RETRY_DELAY_MS = 2_000;
 
 // ── Logging (stderr only — stdout is MCP stdio) ─────────────────────────────
 
+const LOG_PREFIX = WECHAT_ACCOUNT === "default" ? "[wechat]" : `[wechat:${WECHAT_ACCOUNT}]`;
+
 function log(msg: string) {
-  process.stderr.write(`[wechat-channel] ${msg}\n`);
+  process.stderr.write(`${LOG_PREFIX} ${msg}\n`);
 }
 
 function logError(msg: string) {
-  process.stderr.write(`[wechat-channel] ERROR: ${msg}\n`);
+  process.stderr.write(`${LOG_PREFIX} ERROR: ${msg}\n`);
 }
 
 // ── Credentials ──────────────────────────────────────────────────────────────
@@ -86,12 +88,17 @@ function loadCredentials(): AccountData | null {
 }
 
 function saveCredentials(data: AccountData): void {
-  fs.mkdirSync(CREDENTIALS_DIR, { recursive: true });
-  fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify(data, null, 2), "utf-8");
-  try {
-    fs.chmodSync(CREDENTIALS_FILE, 0o600);
-  } catch {
-    // best-effort
+  // Ensure accounts/ directory exists for multi-account support
+  fs.mkdirSync(ACCOUNTS_DIR, { recursive: true });
+  // Save to accounts/<name>.json
+  const accountFile = path.join(ACCOUNTS_DIR, `${WECHAT_ACCOUNT}.json`);
+  fs.writeFileSync(accountFile, JSON.stringify(data, null, 2), "utf-8");
+  try { fs.chmodSync(accountFile, 0o600); } catch { /* best-effort */ }
+  // Default account also writes legacy file for backward compat
+  if (WECHAT_ACCOUNT === "default") {
+    const legacyFile = path.join(CREDENTIALS_DIR, "account.json");
+    fs.writeFileSync(legacyFile, JSON.stringify(data, null, 2), "utf-8");
+    try { fs.chmodSync(legacyFile, 0o600); } catch { /* best-effort */ }
   }
 }
 
