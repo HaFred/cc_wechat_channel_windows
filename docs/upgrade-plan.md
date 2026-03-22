@@ -45,27 +45,28 @@ Phase 2 — 多 Session 路由（后续）
 
 **目标**：用户发图片 → Claude 能看到；Claude 回复图片 → 用户能看到
 
-#### 接收图片
+#### 接收图片 ✅ 已实现
 
 ```
 用户发图片
   ↓
-ilink getupdates 返回 image_item
-  ↓ 提取 image_item.url
-下载图片到本地 /tmp
+ilink getupdates 返回 image_item.media.encrypt_query_param + aeskey
   ↓
-上传到 OSS（可选，也可直接用 ilink URL）
+从微信 CDN 下载加密图片：
+  GET https://novac2c.cdn.weixin.qq.com/c2c/download?encrypted_query_param={...}
   ↓
-传给 Claude Code：
-  "用户发了一张图片：[图片URL]"
-  （Claude 可通过 WebFetch 或直接理解 URL）
+AES-128-ECB 解密（密钥来自 image_item.aeskey 或 media.aes_key）
+  ↓
+保存到本地：~/.claude/channels/wechat/media/img_*.jpg
+  ↓
+传给 Claude Code："[用户发送了图片，已保存到: /path/to/img.jpg]"
+  ↓
+Claude Code 用 Read 工具直接查看图片内容（支持 Vision）
 ```
 
-**实现要点**：
-- `extractTextFromMessage()` 新增 `type === 2`（图片类型）处理
-- 图片消息格式：`image_item.url` 或 `image_item.media_id`
-- 需要研究 ilink API 图片字段的具体格式（通过抓包或测试确认）
-- 可选：本地缓存图片避免重复下载
+**已验证**：2026-03-22 实际测试通过，图片 CDN 下载 + AES 解密 + Claude Code Read 查看 全链路 OK。
+
+**关键发现**：Claude Code 的 Read 工具原生支持读取图片文件并理解内容，无需额外接入视觉模型。
 
 #### 发送图片
 
