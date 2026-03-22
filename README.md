@@ -141,6 +141,65 @@ cd ~/ai-insight && WECHAT_ACCOUNT=personal claude --dangerously-load-development
 
 每个账号独立维护：凭据、消息同步状态、图片缓存目录。
 
+## 进阶用法
+
+### 恢复已有会话
+
+Claude Code 支持恢复之前的会话，让微信通道接入已有的对话上下文：
+
+```bash
+# 恢复指定 session（通过 session ID）
+claude --dangerously-load-development-channels server:wechat \
+  --resume <session-id>
+
+# 交互式选择要恢复的 session
+claude --dangerously-load-development-channels server:wechat \
+  --resume
+```
+
+### 跳过权限确认
+
+在可信环境下（如个人服务器），可以跳过所有工具调用的权限确认弹窗，实现全自动化：
+
+```bash
+claude --dangerously-load-development-channels server:wechat \
+  --allow-dangerously-skip-permissions
+```
+
+### 作为 Teammate 接入
+
+将微信通道作为 teammate 模式运行，与其他 Claude Code 进程协作：
+
+```bash
+claude --dangerously-load-development-channels server:wechat \
+  --allow-dangerously-skip-permissions \
+  --resume <session-id> \
+  --teammate-mode in-process
+```
+
+### 组合示例
+
+```bash
+# 完整示例：恢复会话 + 跳过权限 + 指定账号 + 指定项目目录
+cd ~/my-project && \
+WECHAT_ACCOUNT=work \
+claude --dangerously-load-development-channels server:wechat \
+  --allow-dangerously-skip-permissions \
+  --resume <session-id>
+```
+
+### 常用 CLI 参数参考
+
+| 参数 | 说明 |
+|------|------|
+| `--dangerously-load-development-channels server:wechat` | 加载微信 Channel（必需） |
+| `--resume <session-id>` | 恢复指定会话的上下文 |
+| `--allow-dangerously-skip-permissions` | 跳过所有权限确认 |
+| `--teammate-mode in-process` | Teammate 模式运行 |
+| `--model <model>` | 指定模型（如 `opus`、`sonnet`） |
+| `--permission-mode bypassPermissions` | 绕过权限模式 |
+| `WECHAT_ACCOUNT=<name>` | 环境变量，指定微信账号 |
+
 ## 文件说明
 
 | 文件 | 说明 |
