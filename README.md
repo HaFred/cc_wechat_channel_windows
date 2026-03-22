@@ -200,6 +200,99 @@ claude --dangerously-load-development-channels server:wechat \
 | `--permission-mode bypassPermissions` | 绕过权限模式 |
 | `WECHAT_ACCOUNT=<name>` | 环境变量，指定微信账号 |
 
+## 配合 Telegram Bot 使用
+
+Claude Code 官方提供了 Telegram Channel 插件，可以和微信 Channel 同时使用。
+
+### 安装 Telegram 插件
+
+```bash
+claude plugin install telegram@claude-plugins-official
+```
+
+### 创建 Telegram Bot
+
+1. 打开 Telegram，搜索 [@BotFather](https://t.me/BotFather)
+2. 发送 `/newbot`，输入 bot 名称和用户名
+3. 获得 token（格式：`123456789:AAH...`）
+
+### 配置 Bot Token
+
+```bash
+# 创建配置目录
+mkdir -p ~/.claude/channels/telegram
+
+# 写入 token
+echo "TELEGRAM_BOT_TOKEN=你的token" > ~/.claude/channels/telegram/.env
+chmod 600 ~/.claude/channels/telegram/.env
+```
+
+### 启动
+
+```bash
+claude --channels plugin:telegram@claude-plugins-official
+```
+
+启动后给 bot 发一条消息获取配对码，在 Claude Code 中输入：
+```
+/telegram:access pair <配对码>
+/telegram:access policy allowlist
+```
+
+### 多 Telegram Bot 配置
+
+每个 bot 一个独立目录，通过 `TELEGRAM_STATE_DIR` 环境变量指定：
+
+```bash
+# 目录结构
+~/.claude/channels/
+├── telegram/                  # 默认 bot
+│   ├── .env                   # TELEGRAM_BOT_TOKEN=token1
+│   └── access.json            # {"dmPolicy":"allowlist","allowFrom":["你的用户ID"]}
+├── telegram-project-a/        # 项目 A 的 bot
+│   ├── .env                   # TELEGRAM_BOT_TOKEN=token2
+│   └── access.json
+└── telegram-project-b/        # 项目 B 的 bot
+    ├── .env                   # TELEGRAM_BOT_TOKEN=token3
+    └── access.json
+```
+
+access.json 格式：
+```json
+{
+  "dmPolicy": "allowlist",
+  "allowFrom": ["你的Telegram用户ID"],
+  "groups": {},
+  "pending": {}
+}
+```
+
+> 获取你的 Telegram 用户 ID：给 [@userinfobot](https://t.me/userinfobot) 发消息。
+
+```bash
+# 启动不同 bot 连接不同项目（各开一个终端）
+
+# 终端 1：默认 bot
+cd ~/project-a && claude --channels plugin:telegram@claude-plugins-official
+
+# 终端 2：项目 B 的 bot
+cd ~/project-b && \
+TELEGRAM_STATE_DIR=~/.claude/channels/telegram-project-b \
+claude --channels plugin:telegram@claude-plugins-official
+```
+
+### 微信 + Telegram 同时运行
+
+```bash
+# 终端 1：微信 Channel
+claude --dangerously-load-development-channels server:wechat
+
+# 终端 2：Telegram Channel
+claude --channels plugin:telegram@claude-plugins-official
+```
+
+两个通道可以连到同一个项目目录的不同 session，互不干扰。
+
 ## 文件说明
 
 | 文件 | 说明 |
