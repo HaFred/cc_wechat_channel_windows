@@ -14,12 +14,54 @@ Claude Code ← MCP Channel Protocol ← wechat_reply tool
 
 ## 前置要求
 
-- [Bun](https://bun.sh) >= 1.0
+- [Bun](https://bun.sh) >= 1.0（见下方介绍）
 - [Claude Code](https://claude.com/claude-code) >= 2.1.80
 - claude.ai 账号登录（不支持 API key）
 - 微信 iOS 最新版（需支持 ClawBot 插件）
 
-## 快速开始
+### 关于 Bun
+
+[Bun](https://bun.sh) 是新一代 JavaScript/TypeScript 运行时，本项目选择 Bun 的原因：
+
+- **原生 TypeScript**：直接运行 `.ts` 文件，无需 `tsc` 编译或 `tsx` 转译
+- **极快的启动速度**：冷启动比 Node.js 快 4 倍，适合 Channel 插件频繁重启场景
+- **内置包管理器**：`bun install` 比 `npm install` 快 10-25 倍
+- **兼容 Node.js API**：`fs`、`path`、`crypto` 等模块完全兼容，无需改代码
+
+安装 Bun：
+
+```bash
+# macOS / Linux
+curl -fsSL https://bun.sh/install | bash
+
+# 或通过 npm 安装
+npm install -g bun
+
+# 验证
+bun --version
+```
+
+> 如果你的环境无法安装 Bun，也可以用 `npx tsx` 替代 `bun` 来运行 `.ts` 文件，但性能会有差异。
+
+## 最简上手方式
+
+把本仓库交给 Claude Code，让它帮你完成全部配置：
+
+```bash
+git clone https://github.com/vansin/claude-code-wechat-channel.git
+cd claude-code-wechat-channel
+claude
+```
+
+进入 Claude Code 后直接说：
+
+> 帮我配置微信 Channel，按照 README 的步骤来
+
+Claude Code 会自动读取 README，帮你安装依赖、引导扫码登录、配置 MCP，全程不需要你手动操作。
+
+---
+
+## 手动配置（快速开始）
 
 ### 1. 安装依赖
 
