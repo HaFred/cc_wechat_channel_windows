@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Claude Code WeChat Channel Plugin
+ * Claude Code WeChat Channel Plugin (Windows 11 Compatible)
  *
  * Bridges WeChat messages into a Claude Code session via the Channels MCP protocol.
  * Uses the official WeChat ClawBot ilink API (same as @tencent-weixin/openclaw-weixin).
@@ -14,6 +14,7 @@
 
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -30,8 +31,12 @@ const CHANNEL_VERSION = "0.2.0";
 const DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com";
 const BOT_TYPE = "3";
 const WECHAT_ACCOUNT = process.env.WECHAT_ACCOUNT || "default";
+
+// Cross-platform home directory: works on Windows (USERPROFILE), macOS/Linux (HOME)
+const HOME_DIR = os.homedir();
+
 const CREDENTIALS_DIR = path.join(
-  process.env.HOME || "~",
+  HOME_DIR,
   ".claude",
   "channels",
   "wechat",
@@ -93,12 +98,13 @@ function saveCredentials(data: AccountData): void {
   // Save to accounts/<name>.json
   const accountFile = path.join(ACCOUNTS_DIR, `${WECHAT_ACCOUNT}.json`);
   fs.writeFileSync(accountFile, JSON.stringify(data, null, 2), "utf-8");
-  try { fs.chmodSync(accountFile, 0o600); } catch { /* best-effort */ }
+  // chmod is Unix-only; on Windows this is a harmless no-op
+  try { fs.chmodSync(accountFile, 0o600); } catch { /* best-effort, no-op on Windows */ }
   // Default account also writes legacy file for backward compat
   if (WECHAT_ACCOUNT === "default") {
     const legacyFile = path.join(CREDENTIALS_DIR, "account.json");
     fs.writeFileSync(legacyFile, JSON.stringify(data, null, 2), "utf-8");
-    try { fs.chmodSync(legacyFile, 0o600); } catch { /* best-effort */ }
+    try { fs.chmodSync(legacyFile, 0o600); } catch { /* best-effort, no-op on Windows */ }
   }
 }
 
@@ -452,6 +458,18 @@ function extractTextFromMessage(msg: WeixinMessage): string {
 
 const contextTokenCache = new Map<string, string>();
 
+// ── Message Buffer (replaces Channel push — works without Channels feature) ──
+
+interface BufferedMessage {
+  sender: string;
+  sender_id: string;
+  content: string;
+  timestamp: number;
+}
+
+const messageBuffer: BufferedMessage[] = [];
+const MAX_BUFFER_SIZE = 100;
+
 function cacheContextToken(userId: string, token: string): void {
   contextTokenCache.set(userId, token);
 }
@@ -555,15 +573,15 @@ const mcp = new Server(
   { name: CHANNEL_NAME, version: CHANNEL_VERSION },
   {
     capabilities: {
-      experimental: { "claude/channel": {} },
       tools: {},
     },
     instructions: [
-      `Messages from WeChat users arrive as <channel source="wechat" sender="..." sender_id="...">`,
-      "Reply using the wechat_reply tool for text, or wechat_reply_image for images.",
-      "You MUST pass the sender_id from the inbound tag.",
+      "This MCP server bridges WeChat messages to Claude Code.",
+      "Use wechat_get_messages to check for new incoming WeChat messages.",
+      "Each message includes sender, sender_id, content, and timestamp.",
+      "Reply using wechat_reply (text) or wechat_reply_image (image URL).",
+      "You MUST pass the exact sender_id from the message when replying.",
       "Messages are from real WeChat users via the WeChat ClawBot interface.",
-      "When a user sends an image, the message will contain the image URL. You can analyze it or reference it.",
       "Respond naturally in Chinese unless the user writes in another language.",
       "Keep replies concise — WeChat is a chat app, not an essay platform.",
       "Strip markdown formatting (WeChat doesn't render it). Use plain text.",
@@ -574,6 +592,19 @@ const mcp = new Server(
 // Tools: reply to WeChat (text + image)
 mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
+    {
+      name: "wechat_get_messages",
+      description: "Check for new incoming WeChat messages. Returns any pending messages from the buffer. Call this to see if any WeChat users have sent messages.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          limit: {
+            type: "number",
+            description: "Maximum number of messages to return (default: all pending)",
+          },
+        },
+      },
+    },
     {
       name: "wechat_reply",
       description: "Send a text reply back to the WeChat user",
@@ -617,7 +648,35 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
 
 let activeAccount: AccountData | null = null;
 
-mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
+mcp.setRequestHandler(CallToolRequestSchema, async (req: any) => {
+  if (req.params.name === "wechat_get_messages") {
+    if (messageBuffer.length === 0) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: "No new WeChat messages.",
+          },
+        ],
+      };
+    }
+    // Drain pending messages (optionally limited)
+    const args = (req.params.arguments ?? {}) as { limit?: number };
+    const count = args.limit && args.limit > 0 ? Math.min(args.limit, messageBuffer.length) : messageBuffer.length;
+    const messages = messageBuffer.splice(0, count);
+    const formatted = messages.map((m) => {
+      const time = new Date(m.timestamp).toLocaleTimeString();
+      return `[${time}] sender=${m.sender} sender_id=${m.sender_id}\n${m.content}`;
+    }).join("\n---\n");
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `${messages.length} new message(s):\n\n${formatted}`,
+        },
+      ],
+    };
+  }
   if (req.params.name === "wechat_reply") {
     const { sender_id, text } = req.params.arguments as {
       sender_id: string;
@@ -792,17 +851,18 @@ async function startPolling(account: AccountData): Promise<never> {
 
         log(`收到消息: from=${senderId} text=${content.slice(0, 80)}...`);
 
-        // Push to Claude Code session
-        await mcp.notification({
-          method: "notifications/claude/channel",
-          params: {
-            content,
-            meta: {
-              sender: senderId.split("@")[0] || senderId,
-              sender_id: senderId,
-            },
-          },
+        // Buffer the message for retrieval via wechat_get_messages tool
+        messageBuffer.push({
+          sender: senderId.split("@")[0] || senderId,
+          sender_id: senderId,
+          content,
+          timestamp: msg.create_time_ms || Date.now(),
         });
+        // Keep buffer bounded
+        while (messageBuffer.length > MAX_BUFFER_SIZE) {
+          messageBuffer.shift();
+        }
+        log(`消息已缓存 (buffer size: ${messageBuffer.length})`);
       }
     } catch (err) {
       consecutiveFailures++;

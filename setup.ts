@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * WeChat Channel Setup — standalone QR login tool.
+ * WeChat Channel Setup — standalone QR login tool (Windows 11 Compatible).
  *
  * Supports multiple WeChat accounts:
  *   bun setup.ts              # default account
@@ -8,17 +8,22 @@
  *   bun setup.ts friend       # account named "friend"
  *   bun setup.ts --list       # list all saved accounts
  *
- * Credentials are saved to ~/.claude/channels/wechat/accounts/<name>.json
- * Legacy: ~/.claude/channels/wechat/account.json (default account, backward compat)
+ * Credentials are saved to %USERPROFILE%\.claude\channels\wechat\accounts\<name>.json
+ * (On macOS/Linux: ~/.claude/channels/wechat/accounts/<name>.json)
  */
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const DEFAULT_BASE_URL = "https://ilinkai.weixin.qq.com";
 const BOT_TYPE = "3";
+
+// Cross-platform home directory: works on Windows (USERPROFILE), macOS/Linux (HOME)
+const HOME_DIR = os.homedir();
+
 const WECHAT_DIR = path.join(
-  process.env.HOME || "~",
+  HOME_DIR,
   ".claude",
   "channels",
   "wechat",
@@ -114,8 +119,10 @@ function listAccounts() {
   console.log("\n用法：");
   console.log("  bun setup.ts <账号名>    登录新微信号");
   console.log("  bun setup.ts --list      查看所有账号");
-  console.log("\n启动指定账号：");
-  console.log("  WECHAT_ACCOUNT=<账号名> claude --dangerously-load-development-channels server:wechat");
+  console.log("\n启动指定账号 (PowerShell)：");
+  console.log("  claude --dangerously-load-development-channels server:wechat");
+  console.log("  # 或指定账号：");
+  console.log("  $env:WECHAT_ACCOUNT='work'; claude --dangerously-load-development-channels server:wechat");
 }
 
 async function main() {
@@ -216,6 +223,7 @@ async function main() {
           JSON.stringify(account, null, 2),
           "utf-8",
         );
+        // chmod is Unix-only; harmless no-op on Windows
         try { fs.chmodSync(CREDENTIALS_FILE, 0o600); } catch { /* best-effort */ }
 
         // Default account also writes to legacy path for backward compat
@@ -230,11 +238,11 @@ async function main() {
         console.log(`   用户 ID: ${account.userId}`);
         console.log(`   凭据保存至: ${CREDENTIALS_FILE}`);
         console.log();
-        console.log("启动通道：");
+        console.log("启动通道 (PowerShell)：");
         if (accountName === "default") {
           console.log("  claude --dangerously-load-development-channels server:wechat");
         } else {
-          console.log(`  WECHAT_ACCOUNT=${accountName} claude --dangerously-load-development-channels server:wechat`);
+          console.log(`  $env:WECHAT_ACCOUNT='${accountName}'; claude --dangerously-load-development-channels server:wechat`);
         }
         process.exit(0);
       }

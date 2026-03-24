@@ -1,7 +1,8 @@
 # Claude Code WeChat Channel 升级方案
 
-> 仓库：https://github.com/vansin/claude-code-wechat-channel
-> 日期：2026-03-22
+> 原始仓库：https://github.com/vansin/claude-code-wechat-channel
+> 本版本：Windows 11 适配版
+> 日期：2026-03-22 (原始) / 2026-03-24 (Windows 适配)
 > 策略：**先把单 Session 做到极致，再扩展多 Session 路由**
 
 ---
@@ -57,9 +58,9 @@ ilink getupdates 返回 image_item.media.encrypt_query_param + aeskey
   ↓
 AES-128-ECB 解密（密钥来自 image_item.aeskey 或 media.aes_key）
   ↓
-保存到本地：~/.claude/channels/wechat/media/img_*.jpg
+保存到本地：%USERPROFILE%\.claude\channels\wechat\media\img_*.jpg
   ↓
-传给 Claude Code："[用户发送了图片，已保存到: /path/to/img.jpg]"
+传给 Claude Code："[用户发送了图片，已保存到: D:\Users\...\img.jpg]"
   ↓
 Claude Code 用 Read 工具直接查看图片内容（支持 Vision）
 ```
@@ -171,7 +172,7 @@ final result using wechat_reply when done.
 ```
 SQLite（bun:sqlite 内置支持，零依赖）
   ↓
-~/.claude/channels/wechat/messages.db
+%USERPROFILE%\.claude\channels\wechat\messages.db
 ```
 
 **表结构**：
@@ -218,8 +219,8 @@ CREATE INDEX idx_messages_created ON messages(created_at);
 
 ```
 微信消息 → Router 中间件 → 多个 Claude -p 子进程
-                            ├── ~/project-a    (/a)
-                            ├── ~/project-b    (/b)
+                            ├── D:\project-a    (/a)
+                            ├── D:\project-b    (/b)
                             └── ...            (可配置)
 ```
 
@@ -248,13 +249,13 @@ CREATE INDEX idx_messages_created ON messages(created_at);
   "projects": {
     "my-website": {
       "prefix": "/w",
-      "cwd": "/home/user/my-website",
+      "cwd": "D:\\Users\\you\\my-website",
       "name": "My Website",
       "autoStart": false
     },
     "my-api": {
       "prefix": "/a",
-      "cwd": "/home/user/my-api",
+      "cwd": "D:\\Users\\you\\my-api",
       "name": "Backend API",
       "autoStart": false
     }
@@ -339,4 +340,4 @@ wechat-channel.ts 改动：
 ---
 
 文档作者：Claude Code
-日期：2026-03-22
+日期：2026-03-22 (原始) / 2026-03-24 (Windows 适配)

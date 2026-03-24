@@ -1,7 +1,7 @@
 {
-  "name": "claude-code-wechat-channel",
+  "name": "claude-code-wechat-channel-windows",
   "version": "0.1.0",
-  "description": "Claude Code Channel plugin for WeChat — bridge WeChat messages into Claude Code sessions via the official ilink API",
+  "description": "Claude Code Channel plugin for WeChat (Windows 11 compatible) — bridge WeChat messages into Claude Code sessions via the official ilink API",
   "type": "module",
   "private": true,
   "scripts": {
